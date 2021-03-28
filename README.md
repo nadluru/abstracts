@@ -1,1 +1,1 @@
-# ismrm related codes/posters etc.
+# conference abstracts related surface codes/posters etc.
