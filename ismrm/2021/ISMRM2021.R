@@ -179,6 +179,27 @@ cbind(bc = sum(sqrt((raster::values(tdc))/tdccount*(raster::values(asd))/asdcoun
 
 slopemeanbcdf = slopemeandf %>% inner_join(BCdf)
 
+#' ## Univariate t tests
+dfpval = slopemeandf %>% 
+  rename(Slope = Age_Edit) %>% 
+  inner_join(imgnmeta %>% select(ID, Age_Edit) %>% 
+               group_by(ID) %>% 
+               summarise(meanAge = mean(Age_Edit), 
+                         .groups = 'drop')) %>% 
+  group_by(ROIName, DTIMeasureName) %>% 
+  group_map(~{
+    lm(Slope ~ meanAge + GroupLabel, data = .x) %>% 
+      tidy() %>% 
+      filter(term == 'GroupLabelTDC') %>% 
+      select(p.value) %>% 
+      cbind(.y, DV='UniSlope') %>% 
+      rbind(lm(meanDTI ~ meanAge + GroupLabel, data = .x) %>% 
+              tidy() %>% filter(term == 'GroupLabelTDC') %>% 
+              select(p.value) %>% cbind(.y, DV='UniMean'))
+    }) %>% bind_rows %>% 
+  mutate(padj = p.adjust(p.value, method = 'BH')) %>% 
+  filter(padj <= 0.05)
+
 #' ## Hotelling T2 test
 dfbivariatepval = slopemeanbcdf %>% 
   group_by(ROIName, DTIMeasureName) %>% 
@@ -190,7 +211,88 @@ dfbivariatepval = slopemeanbcdf %>%
   mutate(padj = p.adjust(pval, method = 'BH')) %>% 
   filter(padj <= 0.05)
 
-#' # Slopes vs. means plot (Figure 2)
+#' # Slopes vs. age (Figure 2)
+#+ fig.width=9.45, fig.height=5.95, warning=F
+p = dfpval %>% filter(DV == 'UniSlope') %>% 
+  right_join(slopemeandf) %>% na.omit %>% 
+  rename(Slope = Age_Edit) %>% 
+  inner_join(imgnmeta %>% select(ID, Age_Edit) %>% 
+               group_by(ID) %>% 
+               summarise(meanAge = mean(Age_Edit), 
+                         .groups = 'drop')) %>% 
+  ggplot(aes(x = meanAge, 
+             y = Slope, 
+             color = GroupLabel)) + 
+  geom_point(shape = 21, fill = NA) + 
+  facet_rep_wrap(DTIMeasureName ~ fct_relevel(ROIName, 
+                                              c('GCC', 
+                                                'BCC', 
+                                                'SCC', 
+                                                'lALIC', 
+                                                'rALIC', 
+                                                'rPLIC')), 
+                 scales = 'free', ncol = 4) + 
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.001)) + 
+  labs(x = 'Mean age [y]', 
+       y = 'Slope (dDTI/dAge)') + 
+  theme(axis.text.x = element_text(angle = 90, 
+                                   vjust = 0.5)) + 
+  scale_color_brewer(palette = 'Set1') + 
+  theme(panel.spacing.x = unit(0, "lines"),
+        panel.spacing.y = unit(0, "lines")) + 
+  gtheme
+p
+ggsave(paste0(figroot, 'SlopeVsAge_Final.pdf'), 
+       p, 
+       width = 9.45, 
+       height = 5.95)
+#' # Means vs. age (Figure 3)
+#+ fig.width=6.8, fig.height=7.2, warning=F
+p = dfpval %>% 
+  filter(DV == 'UniMean') %>% 
+  select(ROIName, DTIMeasureName) %>% 
+  distinct %>% arrange(DTIMeasureName) %>% 
+  mutate(RD = paste0(ROIName, '-', DTIMeasureName)) %>% 
+  filter(RD %in% c('GCC-FA', 
+                   'BCC-FA', 
+                   'SCC-FA', 
+                   'GCC-MD', 
+                   'lSLF-MD', 
+                   'SCC-MD', 
+                   'GCC-RD', 
+                   'BCC-RD', 
+                   'SCC-RD')) %>% 
+  right_join(slopemeandf) %>% na.omit %>% 
+  rename(Slope = Age_Edit) %>% 
+  inner_join(imgnmeta %>% select(ID, Age_Edit) %>% 
+               group_by(ID) %>% 
+               summarise(meanAge = mean(Age_Edit), 
+                         .groups = 'drop')) %>% 
+  ggplot(aes(x = meanAge, 
+             y = meanDTI, 
+             color = GroupLabel)) + 
+  geom_point(shape = 21, fill = NA) + 
+  facet_rep_wrap(DTIMeasureName ~ fct_relevel(ROIName, 
+                                              c('GCC', 
+                                                'BCC', 
+                                                'SCC', 
+                                                'lSLF')), 
+                 scales = 'free', ncol = 3) + 
+  scale_y_continuous(labels = scales::number_format(accuracy = 0.001)) + 
+  labs(x = 'Mean age [y]', 
+       y = 'Mean (over the age range) DTI') + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  scale_color_brewer(palette = 'Set1') + 
+  theme(panel.spacing.x = unit(0, "lines"),
+        panel.spacing.y = unit(0, "lines")) + 
+  gtheme
+p
+ggsave(paste0(figroot, 'MeanVsAge_Final.pdf'), 
+       p, 
+       width = 6.8, 
+       height = 7.2)
+
+#' # Slopes vs. means plot (Figure 4)
 #+ fig.width=12.85, fig.height=5.95, warning=F
 p = dfbivariatepval %>% 
   right_join(slopemeanbcdf) %>% na.omit %>% 
